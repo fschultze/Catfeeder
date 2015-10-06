@@ -1,32 +1,12 @@
-/*
- Sainsmart LCD Shield for Arduino
- Key Grab v0.2
- Written by jacky
+/*********************************************************************
+ *   CatFeeder - Uses LCD from SainSmart and a DS1307 RTC            *
+ *********************************************************************/
 
- www.sainsmart.com
-
- Displays the currently pressed key on the LCD screen.
-
- Key Codes (in left-to-right order):
-
- None   - 0
- Select - 1
- Left   - 2
- Up     - 3
- Down   - 4
- Right  - 5
-
- */
-
-//#include <DateTime.h>
-//#include <DateTimeStrings.h>
 #include <LiquidCrystal.h>
 #include <DFR_Key.h>
 #include <Wire.h>
 #include <DS1307new.h>
 #include <EEPROM.h>
-//#include <Ports.h>
-//#include <PortsLCD.h>
 
 #define DS1307_I2C_ADDRESS 0x68                          // I2C Adress
 #define NORMAL_MODE		 0
@@ -100,30 +80,18 @@ void showFeedTime(int index)
 	Serial.println(itoa(ptr[0], buffer, 10));
 	Serial.println(itoa(ptr[1], buffer, 10));
 
-	/*
-	 lcd.setCursor(0, 1);
-	 lcd.write( itoa (i, buffer, 10 ) );
-	 lcd.write("> ");
-
-	 if ( hour < 10 )
-	 lcd.write( "0" );
-	 lcd.write( itoa( hour, buffer, 10 ) );
-	 lcd.write( ":" );
-	 if ( minute < 10 )
-	 lcd.write ( "0" );
-	 lcd.write( itoa( minute, buffer, 10 ) );
-	 lcd.write( "| ");
-	 lcd.write( itoa ( cups, buffer, 10 ) );
-	 */
 }
 
+/********************************************************************
+ * Stores feed time and number of cups in RTC battery buffered memory
+ ********************************************************************/
 void storeFeedTime(int index)
 {
 	byte * p = (byte*) &feedTimes[index - 1];
 	uint8_t addr;
 
-	p[0] = feedMinute; //((byte) feedMinute / 10) << 4 | (byte) feedMinute % 10;
-	p[1] = feedHour; //((byte) feedHour / 10) << 4 | (byte) feedHour % 10;
+	p[0] = feedMinute; 
+	p[1] = feedHour; 
 	p[2] = feedCup;
 	p[3] = 0;
 
@@ -162,6 +130,7 @@ void setup()
 
 	lcd.begin(16, 2);
 	lcd.clear();
+    
 	//lcd.write( "DS1307 - Uhr" );
 	//RTC.setRAM(0, (uint8_t *)&startAddr, sizeof(uint16_t));// Store startAddr in NV-RAM address 0x08
 
@@ -280,6 +249,7 @@ void loop()
 
 	int key = keypad.getKey();
 
+    // wake up
 	if ( key != NO_KEY && mode == LOW_POWER_MODE )
 	{
 		mode = NORMAL_MODE;
@@ -335,7 +305,7 @@ void loop()
 		}
 		else if ( mode == SET_FEED_MODE && keyPressed == 0 )
 		{
-			Serial.println("Leaving set mode");
+			Serial.println("Leaving set feed mode");
 
 			storeFeedTime(feedIndex);
 			showFeedTime(feedIndex);
@@ -343,6 +313,7 @@ void loop()
 		}
 		else
 		{
+            // enter set clock mode after select key is long pressed
 			keyPressed++;
 			if ( keyPressed == 10 )
 			{
@@ -360,6 +331,7 @@ void loop()
 	case RIGHT_KEY:
 		Serial.println("Right");
 
+        // set position to set clock
 		if ( mode == SET_CLOCK_MODE )
 		{
 			switch ( position )
@@ -383,6 +355,8 @@ void loop()
 
 			lcd.setCursor(0, 0);
 		}
+        
+        // set position of feed time
 		else if ( mode == SET_FEED_MODE )
 		{
 			switch ( position )
@@ -407,6 +381,7 @@ void loop()
 
 		Serial.println(key == UP_KEY ? "Up" : "Down");
 
+        // set clock with up/down keys
 		if ( mode == SET_CLOCK_MODE )
 		{
 			switch ( position )
@@ -465,6 +440,8 @@ void loop()
 				break;
 			}
 		}
+        
+        // set feed time with up/down key
 		else if ( mode == SET_FEED_MODE )
 		{
 			switch ( position )
@@ -505,6 +482,7 @@ void loop()
 		}
 		else
 		{
+            // entering feed mode by long press down key
 			prevKey = key;
 			if ( key == DOWN_KEY )
 			{
@@ -528,6 +506,8 @@ void loop()
 	int timeout = mode == LOW_POWER_MODE ? 1 : 50;
 	if ( key == NO_KEY )
 	{
+        // timeout: switch display off and cancel previous actions
+        
 		displayTimeout++;
 		if ( displayTimeout == timeout ) // 10 seconds timeout
 		{
@@ -562,8 +542,7 @@ void loop()
 
 	lcd.setCursor(0, 0);              // Datum und Uhrzeit in 1. Zeile schreiben
 
-	int blinkClock = mode == SET_CLOCK_MODE && seconds % 2
-			&& (key == NO_KEY || key == SELECT_KEY);
+	int blinkClock = (mode == SET_CLOCK_MODE) && (seconds % 2) && (key == NO_KEY || key == SELECT_KEY);
 
 	if ( blinkClock && position == POS_DAY )
 	{
@@ -640,8 +619,7 @@ void loop()
 	lcd.write ( itoa ( feedIndex, buffer, 10 ) );
 	lcd.write ("> ");
 
-	int blinkTime = mode == SET_FEED_MODE && seconds % 2
-			&& (key == NO_KEY || key == DOWN_KEY);
+	int blinkTime = (mode == SET_FEED_MODE) && (seconds % 2) && (key == NO_KEY || key == DOWN_KEY);
 
 	if ( blinkTime && position == POS_HOUR )
 	{
@@ -716,11 +694,13 @@ void loop()
 			hours++;
 		}
 
+        // switch off feeder after all cups are served
 		if ( mode == FEED_MODE && remainingCups == 0 )
 		{
 			mode = NORMAL_MODE;
 		}
 
+        // finally check if it is feeding time
 		if ( mode == NORMAL_MODE || mode == LOW_POWER_MODE )
 		{
 			for (int i = 0; i < sizeof(feedTimes) / sizeof(feedTimes[0]); i++)
@@ -754,6 +734,7 @@ void loop()
 		}
 	}
 
+    // if in feed mode wait for the end switch and decrement cups to be fed
 	if ( mode == FEED_MODE )
 	{
 		if ( remainingCups > 0 )
